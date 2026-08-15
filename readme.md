@@ -42,6 +42,15 @@
 
 ## ⚠️ 重要更新日志
 
+> **ztc 专用构建：** 新增独立的 `内核构建 - ztc 5.10 + ReSukiSU + SUSFS`
+> workflow。它只构建
+> [ztc1997/android_gki_kernel_5.10_common](https://github.com/ztc1997/android_gki_kernel_5.10_common)
+> 的 default 分支（当前为 `android12-5.10-2025-09` / `5.10.240`），并在该基线上叠加
+> ReSukiSU 与 SUSFS。原有 Android 12 及其他版本构建仍使用原来的 AOSP 基线。
+>
+> 该 workflow 固定关闭 ZRAM、BBG、Re-Kernel 与 Droidspaces 等额外功能，避免覆盖 ztc
+> 自带优化；运行时会校验 default 分支的内核版本，并拒绝已预集成 KernelSU/SUSFS 的源码分支。
+
 > **注意：** 目前不支持一加 ColorOS 14、15，刷入后可能需要清除数据开机。
 
 > **ReSukiSU：ReSukiSU更新比SukiSU勤快，SukiSU报错就试试ReSukiSU**

@@ -32,6 +32,21 @@ on:
         required: true
         type: string
 
+      # ==================== 可选内核源码基线 ====================
+      # 留空时保持 Android manifest 中的 AOSP common 源码不变。
+      kernel_source_repo:
+        required: false
+        type: string
+        default: ""
+      kernel_source_ref:
+        required: false
+        type: string
+        default: "HEAD"
+      artifact_suffix:
+        required: false
+        type: string
+        default: ""
+
       # ==================== KernelSU 配置 ====================
       ksu_variant:
         required: true
@@ -56,15 +71,17 @@ on:
       use_zram:
         required: true
         type: boolean
-        default: true
       use_bbg:
         required: true
         type: boolean
-        default: true
       use_rekernel:
         required: false
         type: boolean
         default: false
+      use_kpm:
+        required: false
+        type: string
+        default: "disabled"
       cve_2026_43499_patch:
         required: false
         type: boolean
@@ -72,7 +89,6 @@ on:
       enable_susfs:
         required: true
         type: boolean
-        default: true
       supp_op:
         required: false
         type: boolean
@@ -111,6 +127,8 @@ jobs:
           echo "内核版本      : ${{ inputs.kernel_version }}"
           echo "子版本号      : ${{ inputs.sub_level }}"
           echo "补丁级别      : ${{ inputs.os_patch_level }}"
+          echo "源码仓库      : ${{ inputs.kernel_source_repo || 'AOSP manifest default' }}"
+          echo "源码引用      : ${{ inputs.kernel_source_repo && inputs.kernel_source_ref || 'manifest revision' }}"
           echo "KSU 变体      : ReSukiSU"
           echo "KSU 分支      : ${{ inputs.ksu_branch }}"
           echo "构建时间      : ${{ inputs.build_time }}"
@@ -311,6 +329,20 @@ jobs:
           $REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast
           echo "REMOTE_BRANCH=$REMOTE_BRANCH" >> $GITHUB_ENV
 
+      # ==================== 可选源码基线覆盖 ====================
+      # 在保留 AOSP manifest 工具链和构建脚本的同时，仅替换 common 内核源码。
+      - name: 切换自定义内核基线
+        if: inputs.kernel_source_repo != ''
+        working-directory: ${{ env.KERNEL_ROOT }}/common
+        env:
+          KERNEL_SOURCE_REPO: ${{ inputs.kernel_source_repo }}
+          KERNEL_SOURCE_REF: ${{ inputs.kernel_source_ref }}
+        run: |
+          bash "$GITHUB_WORKSPACE/scripts/checkout_kernel_source.sh" \
+            "$KERNEL_SOURCE_REPO" \
+            "$KERNEL_SOURCE_REF" \
+            "${{ inputs.kernel_version }}.${{ inputs.sub_level }}"
+
       # ==================== 伪装 /proc/config.gz（自动检测） ====================
       # 若仓库存在 config/stock_defconfig，则自动应用；不存在则跳过
       - name: 应用 Stock Config 伪装
@@ -427,11 +459,11 @@ jobs:
 
           # 如果用户输入了自定义分支名或 commit hash，直接使用
           if [ -n "$branch_input" ]; then
-            BRANCH="-s $branch_input"
+            BRANCH="$branch_input"
             echo "使用自定义分支/提交: $branch_input"
           else
             # ReSukiSU 默认使用 main 分支
-            BRANCH="-s main"
+            BRANCH="main"
           fi
 
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
@@ -443,7 +475,7 @@ jobs:
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           echo "添加 ReSukiSU..."
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash $BRANCH
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s -- "$BRANCH"
 
           if [ -d "KernelSU/.git" ]; then
             KSU_LATEST_COMMIT_DATE=$(git -C KernelSU log -1 --date=format:'%Y-%m-%d %H:%M:%S %z' --format='%cd')
@@ -1392,7 +1424,7 @@ jobs:
       - name: 创建 AnyKernel3 压缩包
         run: |
           cd $ANYKERNEL3
-          ZIP_NAME="${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}-AnyKernel3.zip"
+          ZIP_NAME="${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}${{ inputs.artifact_suffix }}-AnyKernel3.zip"
           mv ../Image ./Image
           zip -r "../$ZIP_NAME" ./*
 
@@ -1489,7 +1521,7 @@ jobs:
       - name: 上传构建产物
         uses: actions/upload-artifact@v6
         with:
-          name: ReSukiSU_kernel-${{ env.CONFIG }}
+          name: ReSukiSU_kernel-${{ env.CONFIG }}${{ inputs.artifact_suffix }}
           path: |
             *AnyKernel3.zip
 #            *.img
@@ -1500,7 +1532,7 @@ jobs:
         if: always() && env.REJ_COUNT > 0
         uses: actions/upload-artifact@v6
         with:
-          name: ReSukiSU_kernel-${{ env.CONFIG }}-Rejects
+          name: ReSukiSU_kernel-${{ env.CONFIG }}${{ inputs.artifact_suffix }}-Rejects
           path: patch-rejects/
           if-no-files-found: ignore
           compression-level: 9
