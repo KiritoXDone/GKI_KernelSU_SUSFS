@@ -2,7 +2,10 @@
 
 The BTF compatibility patches in this directory are copied from
 `WildKernels/GKI_KernelSU_SUSFS` commit
-`625d90f863c5a35262fbab57a3513497abbac357`.
+`625d90f863c5a35262fbab57a3513497abbac357`. Patch 0002 also includes the
+minimal Android Common Kernel fix from commit
+`75f82c6a15c4188cbb32825892fc6ae3e95479f0`, which passes the hermetic host
+CFLAGS to `libsubcmd` and avoids glibc `__isoc23_strto*` link failures.
 
 The BBRv3 and ptrace patches are not vendored. The workflow fetches
 `WildKernels/kernel_patches` commit

@@ -129,7 +129,7 @@ if [[ "$apply_btf" == true ]]; then
   btf_patch_1="$repo_root/patches/wild/btf/0001-libbpf-remove-feature-detection-BTF.patch"
   btf_patch_2="$repo_root/patches/wild/btf/0002-resolve-btfids-inherit-host-linker-flags.patch"
   verify_sha256 9d080fb2b95f66650372c761c70dc4986963bf9b773a5cc21388754ad0c5eb26 "$btf_patch_1"
-  verify_sha256 483fcce8cd48ea44d8d33b9c6f8b63ee8a615d771979a1f39a94521965372476 "$btf_patch_2"
+  verify_sha256 25f4656dc4ce0c11e7ba1de295a3dbae6119bb2c2f11fbddb6433526cfd36609 "$btf_patch_2"
   patch --dry-run --batch --forward --fuzz=0 -p1 < "$btf_patch_1"
   patch --batch --forward --fuzz=0 -p1 < "$btf_patch_1"
   patch --dry-run --batch --forward --fuzz=0 -p1 < "$btf_patch_2"
