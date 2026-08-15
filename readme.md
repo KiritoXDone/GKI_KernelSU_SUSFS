@@ -48,6 +48,9 @@
 > 的 default 分支（当前为 `android12-5.10-2025-09` / `5.10.240`），并在该基线上叠加
 > ReSukiSU 与 SUSFS。原有 Android 12 及其他版本构建仍使用原来的 AOSP 基线。
 >
+> 构建使用 ztc 衍生流程采用的 `clang-r563880`，下载后校验固定 SHA256，以支持该基线的
+> MLGO regalloc 参数。
+>
 > 该 workflow 固定关闭 ZRAM、BBG、Re-Kernel 与 Droidspaces 等额外功能，避免覆盖 ztc
 > 自带优化；运行时会校验 default 分支的内核版本，并拒绝已预集成 KernelSU/SUSFS 的源码分支。
 

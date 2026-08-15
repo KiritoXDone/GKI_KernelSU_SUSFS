@@ -46,6 +46,18 @@ on:
         required: false
         type: string
         default: ""
+      clang_prebuilt_version:
+        required: false
+        type: string
+        default: ""
+      clang_archive_url:
+        required: false
+        type: string
+        default: ""
+      clang_archive_sha256:
+        required: false
+        type: string
+        default: ""
 
       # ==================== KernelSU 配置 ====================
       ksu_variant:
@@ -129,6 +141,7 @@ jobs:
           echo "补丁级别      : ${{ inputs.os_patch_level }}"
           echo "源码仓库      : ${{ inputs.kernel_source_repo || 'AOSP manifest default' }}"
           echo "源码引用      : ${{ inputs.kernel_source_repo && inputs.kernel_source_ref || 'manifest revision' }}"
+          echo "Clang 工具链  : ${{ inputs.clang_prebuilt_version || 'manifest default' }}"
           echo "KSU 变体      : ReSukiSU"
           echo "KSU 分支      : ${{ inputs.ksu_branch }}"
           echo "构建时间      : ${{ inputs.build_time }}"
@@ -342,6 +355,48 @@ jobs:
             "$KERNEL_SOURCE_REPO" \
             "$KERNEL_SOURCE_REF" \
             "${{ inputs.kernel_version }}.${{ inputs.sub_level }}"
+
+      # ztc 基线启用了 MLGO regalloc，需要比 Android 12 manifest 默认值更新的 clang。
+      - name: 恢复自定义 Clang 缓存
+        if: inputs.clang_prebuilt_version != ''
+        id: cache-custom-clang
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/${{ inputs.android_version }}-${{ inputs.kernel_version }}-${{ inputs.sub_level }}/prebuilts-master/clang/host/linux-x86/${{ inputs.clang_prebuilt_version }}
+          key: custom-clang-${{ runner.os }}-${{ inputs.clang_prebuilt_version }}-${{ inputs.clang_archive_sha256 }}
+
+      - name: 安装自定义 Clang
+        if: inputs.clang_prebuilt_version != ''
+        env:
+          CLANG_PREBUILT_VERSION: ${{ inputs.clang_prebuilt_version }}
+          CLANG_ARCHIVE_URL: ${{ inputs.clang_archive_url }}
+          CLANG_ARCHIVE_SHA256: ${{ inputs.clang_archive_sha256 }}
+          CLANG_CACHE_HIT: ${{ steps.cache-custom-clang.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$CLANG_ARCHIVE_URL" ] || [ -z "$CLANG_ARCHIVE_SHA256" ]; then
+            echo "::error::自定义 Clang 缺少下载地址或 SHA256"
+            exit 1
+          fi
+
+          CLANG_DEST="$KERNEL_ROOT/prebuilts-master/clang/host/linux-x86/$CLANG_PREBUILT_VERSION"
+          if [ "$CLANG_CACHE_HIT" != "true" ]; then
+            CLANG_ARCHIVE="$RUNNER_TEMP/$CLANG_PREBUILT_VERSION.tar.gz"
+            mkdir -p "$CLANG_DEST"
+            curl --fail --location --retry 5 --retry-all-errors \
+              "$CLANG_ARCHIVE_URL" -o "$CLANG_ARCHIVE"
+            printf '%s  %s\n' "$CLANG_ARCHIVE_SHA256" "$CLANG_ARCHIVE" | sha256sum --check --strict
+            tar -xzf "$CLANG_ARCHIVE" -C "$CLANG_DEST"
+          fi
+
+          test -x "$CLANG_DEST/bin/clang"
+          "$CLANG_DEST/bin/clang" --version
+
+          CLANG_CONFIG="$KERNEL_ROOT/common/build.config.common"
+          test -f "$CLANG_CONFIG"
+          sed -i "s|^CLANG_PREBUILT_BIN=.*|CLANG_PREBUILT_BIN=prebuilts-master/clang/host/linux-x86/$CLANG_PREBUILT_VERSION/bin|" "$CLANG_CONFIG"
+          grep '^CLANG_PREBUILT_BIN=' "$CLANG_CONFIG"
 
       # ==================== 伪装 /proc/config.gz（自动检测） ====================
       # 若仓库存在 config/stock_defconfig，则自动应用；不存在则跳过

@@ -49,6 +49,10 @@ jobs:
       kernel_source_repo: "https://github.com/ztc1997/android_gki_kernel_5.10_common.git"
       kernel_source_ref: "HEAD"
       artifact_suffix: "-ztc"
+      # ztc 官方衍生 workflow 使用 r563880，以支持其 MLGO regalloc 参数。
+      clang_prebuilt_version: "clang-r563880"
+      clang_archive_url: "https://github.com/zzh20188/ZTC-Kernel-Build/releases/download/clang/clang-r563880.tar.gz"
+      clang_archive_sha256: "cf64c238acce155ab75ffe00e9b9a6d4007b3ffd0d31598e3275e40df6830743"
       ksu_variant: "ReSukiSU"
       ksu_branch: ${{ inputs.kernelsu_branch || 'main' }}
       version: ${{ inputs.version || '-ztc-ReSukiSU-SUSFS' }}
