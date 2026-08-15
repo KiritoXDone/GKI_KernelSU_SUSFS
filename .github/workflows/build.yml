@@ -398,6 +398,14 @@ jobs:
           sed -i "s|^CLANG_PREBUILT_BIN=.*|CLANG_PREBUILT_BIN=prebuilts-master/clang/host/linux-x86/$CLANG_PREBUILT_VERSION/bin|" "$CLANG_CONFIG"
           grep '^CLANG_PREBUILT_BIN=' "$CLANG_CONFIG"
 
+          # ztc default 以版本号判断该警告选项，但 r563880 (clang 21.0) 尚未提供它。
+          # 使用 Kbuild 自带的能力探测宏；支持该选项的 21.1+ 工具链仍会启用抑制。
+          KVM_MAKEFILE="$KERNEL_ROOT/common/arch/arm64/kvm/Makefile"
+          if grep -qF 'ccflags-y += -Wno-uninitialized-const-pointer' "$KVM_MAKEFILE"; then
+            sed -i 's|ccflags-y += -Wno-uninitialized-const-pointer|ccflags-y += $(call cc-disable-warning,uninitialized-const-pointer)|' "$KVM_MAKEFILE"
+            echo "已将 uninitialized-const-pointer 抑制改为编译器能力探测"
+          fi
+
       # ==================== 伪装 /proc/config.gz（自动检测） ====================
       # 若仓库存在 config/stock_defconfig，则自动应用；不存在则跳过
       - name: 应用 Stock Config 伪装
