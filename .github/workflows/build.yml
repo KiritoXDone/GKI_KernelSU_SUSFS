@@ -1533,6 +1533,8 @@ jobs:
       # ==================== 配置内核名称 ====================
       - name: 配置内核名称
         working-directory: ${{ env.KERNEL_ROOT }}
+        env:
+          CUSTOM_VERSION: ${{ inputs.version }}
         run: |
           if [ -f "build/build.sh" ]; then
             sed -i 's/-dirty//' ./common/scripts/setlocalversion
@@ -1545,8 +1547,17 @@ jobs:
           fi
 
           # 配置内核名称
-          if [ -n "${{ inputs.version }}" ]; then
-            CLEAN_VERSION=$(echo "${{ inputs.version }}" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+//')
+          if [ -n "$CUSTOM_VERSION" ]; then
+            if [[ "$CUSTOM_VERSION" == *'{hashCode}'* ]]; then
+              HASH_INDEX=$(mktemp)
+              rm -f "$HASH_INDEX"
+              GIT_INDEX_FILE="$HASH_INDEX" git -C ./common read-tree HEAD
+              GIT_INDEX_FILE="$HASH_INDEX" git -C ./common add -A
+              HASH_CODE=$(GIT_INDEX_FILE="$HASH_INDEX" git -C ./common write-tree | cut -c1-8)
+              rm -f "$HASH_INDEX"
+              CUSTOM_VERSION="${CUSTOM_VERSION//\{hashCode\}/$HASH_CODE}"
+            fi
+            CLEAN_VERSION=$(echo "$CUSTOM_VERSION" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+//')
             
             # 定义 KMI_TAG（与自动版本保持一致）
             case "${{ inputs.android_version }}-${{ inputs.kernel_version }}" in

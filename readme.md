@@ -56,6 +56,11 @@
 >
 > 两组补丁均固定上游提交并校验 SHA-256；ztc 组还会校验 AOSP 基线树和应用后的完整
 > Git tree。WildKernels 组始终在 ztc 组之后应用，BBRv3 冲突通过仓库内审计过的兼容 hunk 处理。
+>
+> 专用 workflow 默认关闭 ZRAM 与 Re-Kernel，其余可用功能全部开启（DroidSpaces 默认使用
+> 已验证的 678 槽位）。构建时间默认为触发时的 UTC，默认内核版本格式为
+> `5.10.x-android12-9-KiritoXD-<8 位源码 tree hash>`。构建成功后，AnyKernel3 ZIP
+> 会同时作为 Actions artifact 保存，并发布到对应的 GitHub Release。
 
 > **注意：** 目前不支持一加 ColorOS 14、15，刷入后可能需要清除数据开机。
 

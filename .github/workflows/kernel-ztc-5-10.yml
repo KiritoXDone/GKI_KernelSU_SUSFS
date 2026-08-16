@@ -19,15 +19,15 @@ on:
         type: string
         default: "main"
       version:
-        description: "自定义内核版本后缀"
+        description: "内核版本后缀（{hashCode} 自动替换为源码哈希）"
         required: false
         type: string
-        default: "-ztc-ReSukiSU-SUSFS"
+        default: "-android12-9-KiritoXD-{hashCode}"
       build_time:
         description: "自定义构建时间（N 或留空为当前 UTC）"
         required: false
         type: string
-        default: "Sun Dec 01 08:10:00 UTC 2024"
+        default: ""
       cve_2026_43499_patch:
         description: "应用 CVE-2026-43499 rtmutex 修复链"
         required: false
@@ -42,7 +42,7 @@ on:
         description: "启用 Baseband Guard（BBG）关键分区写保护"
         required: false
         type: boolean
-        default: false
+        default: true
       use_rekernel:
         description: "启用 Re-Kernel GKI Vendor Hooks 驱动"
         required: false
@@ -62,42 +62,42 @@ on:
           - "678"
           - "123"
           - "345"
-        default: "off"
+        default: "678"
       droidspaces_ntsync:
         description: "启用 NTSync（需同时启用 DroidSpaces）"
         required: false
         type: boolean
-        default: false
+        default: true
       use_networking:
         description: "启用 BBRv1/IPSet/IPv6 NAT/TTL/CAKE/fq/connmark/WireGuard"
         required: false
         type: boolean
-        default: false
+        default: true
       use_bbr3:
         description: "回移 BBRv3 并设为默认（自动包含网络增强）"
         required: false
         type: boolean
-        default: false
+        default: true
       use_cifs:
         description: "启用内建 SMB/CIFS 网络文件系统"
         required: false
         type: boolean
-        default: false
+        default: true
       use_misc:
         description: "启用 TMPFS ACL/XATTR、Kallsyms、追踪与 eBPF events"
         required: false
         type: boolean
-        default: false
+        default: true
       use_fuse_bpf:
         description: "尝试启用 FUSE-BPF（ztc 5.10 当前未提供该 Kconfig）"
         required: false
         type: boolean
-        default: false
+        default: true
       use_ptrace_fix:
         description: "启用 <5.16 Ptrace 陈旧事件数据泄漏修复"
         required: false
         type: boolean
-        default: false
+        default: true
       use_unicode_fix:
         description: "启用实验性 Unicode 非打印字符路径绕过修复"
         required: false
@@ -107,7 +107,7 @@ on:
         description: "启用 BTF（CONFIG_DEBUG_INFO_BTF，增加构建耗时/体积）"
         required: false
         type: boolean
-        default: false
+        default: true
 
 jobs:
   build-ztc-resukisu-susfs:
@@ -128,7 +128,7 @@ jobs:
       clang_archive_sha256: "cf64c238acce155ab75ffe00e9b9a6d4007b3ffd0d31598e3275e40df6830743"
       ksu_variant: "ReSukiSU"
       ksu_branch: ${{ inputs.kernelsu_branch || 'main' }}
-      version: ${{ inputs.version || '-ztc-ReSukiSU-SUSFS' }}
+      version: ${{ inputs.version || '-android12-9-KiritoXD-{hashCode}' }}
       build_time: ${{ inputs.build_time || '' }}
       use_zram: ${{ inputs.use_zram }}
       use_bbg: ${{ inputs.use_bbg }}
@@ -144,10 +144,58 @@ jobs:
       enable_susfs: ${{ !inputs.cancel_susfs }}
       enable_unicode_fix: ${{ inputs.use_unicode_fix }}
       supp_op: false
-      droidspaces: ${{ inputs.droidspaces }}
+      droidspaces: ${{ inputs.droidspaces || '678' }}
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       strict_feature_patches: true
 
   get-ksu-manager:
     uses: ./.github/workflows/get-manager.yml
     secrets: inherit
+
+  release-ak3:
+    name: "发布 5.10.257 AnyKernel3"
+    needs: build-ztc-resukisu-susfs
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ztc-5.10.257-r${{ github.run_number }}
+    steps:
+      - name: 下载 AnyKernel3 构建产物
+        uses: actions/download-artifact@v8
+        with:
+          name: ReSukiSU_kernel-android12-5.10-257-ztc
+          path: release-assets
+
+      - name: 发布 AnyKernel3 到 GitHub Releases
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t AK3_FILES < <(find release-assets -maxdepth 1 -type f -name '*AnyKernel3.zip' -print)
+          if [[ ${#AK3_FILES[@]} -ne 1 ]]; then
+            printf 'expected exactly one AnyKernel3 zip, found %d\n' "${#AK3_FILES[@]}" >&2
+            exit 1
+          fi
+
+          AK3_FILE=${AK3_FILES[0]}
+          RELEASE_TITLE="5.10.257 android12-9 KiritoXD"
+          RELEASE_NOTES="AOSP android12-5.10-2026-07_r1 with ztc and WildKernels patch sets. Built by workflow run ${GITHUB_RUN_NUMBER}."
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$AK3_FILE" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$AK3_FILE" \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_TITLE" \
+              --notes "$RELEASE_NOTES"
+          fi
+
+          {
+            echo "## AnyKernel3 Release"
+            echo
+            echo "- Tag: \`$RELEASE_TAG\`"
+            echo "- File: \`$(basename "$AK3_FILE")\`"
+            echo "- URL: https://github.com/${GITHUB_REPOSITORY}/releases/tag/$RELEASE_TAG"
+          } >> "$GITHUB_STEP_SUMMARY"
