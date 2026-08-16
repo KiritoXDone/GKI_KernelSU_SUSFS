@@ -34,6 +34,81 @@ on:
         required: false
         type: boolean
         default: true
+      use_zram:
+        description: "启用 ZRAM LZ4 1.10 + NEON + LZ4KD/LZ4K_OPLUS"
+        required: false
+        type: boolean
+        default: false
+      use_bbg:
+        description: "启用 Baseband Guard（BBG）关键分区写保护"
+        required: false
+        type: boolean
+        default: false
+      use_rekernel:
+        description: "启用 Re-Kernel GKI Vendor Hooks 驱动"
+        required: false
+        type: boolean
+        default: false
+      cancel_susfs:
+        description: "禁用 SUSFS"
+        required: false
+        type: boolean
+        default: false
+      droidspaces:
+        description: "DroidSpaces 容器支持（ztc 已验证 678 槽位）"
+        required: false
+        type: choice
+        options:
+          - "off"
+          - "678"
+          - "123"
+          - "345"
+        default: "off"
+      droidspaces_ntsync:
+        description: "启用 NTSync（需同时启用 DroidSpaces）"
+        required: false
+        type: boolean
+        default: false
+      use_networking:
+        description: "启用 BBRv1/IPSet/IPv6 NAT/TTL/CAKE/fq/connmark/WireGuard"
+        required: false
+        type: boolean
+        default: false
+      use_bbr3:
+        description: "回移 BBRv3 并设为默认（自动包含网络增强）"
+        required: false
+        type: boolean
+        default: false
+      use_cifs:
+        description: "启用内建 SMB/CIFS 网络文件系统"
+        required: false
+        type: boolean
+        default: false
+      use_misc:
+        description: "启用 TMPFS ACL/XATTR、Kallsyms、追踪与 eBPF events"
+        required: false
+        type: boolean
+        default: false
+      use_fuse_bpf:
+        description: "尝试启用 FUSE-BPF（ztc 5.10 当前未提供该 Kconfig）"
+        required: false
+        type: boolean
+        default: false
+      use_ptrace_fix:
+        description: "启用 <5.16 Ptrace 陈旧事件数据泄漏修复"
+        required: false
+        type: boolean
+        default: false
+      use_unicode_fix:
+        description: "启用实验性 Unicode 非打印字符路径绕过修复"
+        required: false
+        type: boolean
+        default: true
+      use_btf:
+        description: "启用 BTF（CONFIG_DEBUG_INFO_BTF，增加构建耗时/体积）"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build-ztc-resukisu-susfs:
@@ -57,14 +132,23 @@ jobs:
       ksu_branch: ${{ inputs.kernelsu_branch || 'main' }}
       version: ${{ inputs.version || '-ztc-ReSukiSU-SUSFS' }}
       build_time: ${{ inputs.build_time || '' }}
-      use_zram: false
-      use_bbg: false
-      use_rekernel: false
+      use_zram: ${{ inputs.use_zram }}
+      use_bbg: ${{ inputs.use_bbg }}
+      use_rekernel: ${{ inputs.use_rekernel }}
+      use_networking: ${{ inputs.use_networking || inputs.use_bbr3 }}
+      use_bbr3: ${{ inputs.use_bbr3 }}
+      use_cifs: ${{ inputs.use_cifs }}
+      use_misc: ${{ inputs.use_misc }}
+      use_fuse_bpf: ${{ inputs.use_fuse_bpf }}
+      use_ptrace_fix: ${{ inputs.use_ptrace_fix }}
+      use_btf: ${{ inputs.use_btf }}
       cve_2026_43499_patch: ${{ inputs.cve_2026_43499_patch }}
-      enable_susfs: true
+      enable_susfs: ${{ !inputs.cancel_susfs }}
+      enable_unicode_fix: ${{ inputs.use_unicode_fix }}
       supp_op: false
-      droidspaces: "off"
-      droidspaces_ntsync: false
+      droidspaces: ${{ inputs.droidspaces }}
+      droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
+      strict_feature_patches: true
 
   get-ksu-manager:
     uses: ./.github/workflows/get-manager.yml

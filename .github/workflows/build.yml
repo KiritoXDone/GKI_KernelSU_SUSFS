@@ -90,6 +90,34 @@ on:
         required: false
         type: boolean
         default: false
+      use_networking:
+        required: false
+        type: boolean
+        default: false
+      use_bbr3:
+        required: false
+        type: boolean
+        default: false
+      use_cifs:
+        required: false
+        type: boolean
+        default: false
+      use_misc:
+        required: false
+        type: boolean
+        default: false
+      use_fuse_bpf:
+        required: false
+        type: boolean
+        default: false
+      use_ptrace_fix:
+        required: false
+        type: boolean
+        default: false
+      use_btf:
+        required: false
+        type: boolean
+        default: false
       use_kpm:
         required: false
         type: string
@@ -101,6 +129,10 @@ on:
       enable_susfs:
         required: true
         type: boolean
+      enable_unicode_fix:
+        required: false
+        type: boolean
+        default: true
       supp_op:
         required: false
         type: boolean
@@ -110,6 +142,10 @@ on:
         type: string
         default: "off"
       droidspaces_ntsync:
+        required: false
+        type: boolean
+        default: false
+      strict_feature_patches:
         required: false
         type: boolean
         default: false
@@ -149,9 +185,17 @@ jobs:
           echo "ZRAM 增强     : ${{ inputs.use_zram }}"
           echo "BBG 补丁      : ${{ inputs.use_bbg }}"
           echo "Re-Kernel     : ${{ inputs.use_rekernel }}"
+          echo "网络增强      : ${{ inputs.use_networking }}"
+          echo "BBRv3         : ${{ inputs.use_bbr3 }}"
+          echo "CIFS          : ${{ inputs.use_cifs }}"
+          echo "Misc/eBPF     : ${{ inputs.use_misc }}"
+          echo "FUSE-BPF      : ${{ inputs.use_fuse_bpf }}"
+          echo "Ptrace 修复   : ${{ inputs.use_ptrace_fix }}"
+          echo "BTF           : ${{ inputs.use_btf }}"
           echo "CVE-2026-43499: ${{ inputs.cve_2026_43499_patch }}"
           echo "Droidspaces   : ${{ inputs.droidspaces }}"
           echo "NTSync        : ${{ inputs.droidspaces_ntsync }}"
+          echo "Unicode 修复  : ${{ inputs.enable_unicode_fix }}"
           echo "Stock Config  : 自动检测 config/stock_defconfig"
           echo "========================================"
 
@@ -196,6 +240,7 @@ jobs:
           ZZH_PATCHES=$GITHUB_WORKSPACE
           ANYKERNEL3=$GITHUB_WORKSPACE/AnyKernel3
           ACTION_BUILD=$GITHUB_WORKSPACE/Action-Build
+          FEATURE_EXPECTATIONS=$GITHUB_WORKSPACE/kernel-feature-expectations.txt
           AVBTOOL=$GITHUB_WORKSPACE/kernel-build-tools/linux-x86/bin/avbtool
           MKBOOTIMG=$GITHUB_WORKSPACE/mkbootimg/mkbootimg.py
           UNPACK_BOOTIMG=$GITHUB_WORKSPACE/mkbootimg/unpack_bootimg.py
@@ -312,7 +357,12 @@ jobs:
           echo "SUSFS 仓库最新提交日期: $SUSFS_LATEST_COMMIT_DATE"
 
           echo "准备补丁资源..."
-          git clone https://github.com/WildKernels/kernel_patches.git
+          WILD_PATCHES_COMMIT="0bb0203cdfcadbe32bb572af3a52e1c1430c7515"
+          git init kernel_patches
+          git -C kernel_patches remote add origin https://github.com/WildKernels/kernel_patches.git
+          git -C kernel_patches fetch --depth 1 origin "$WILD_PATCHES_COMMIT"
+          git -C kernel_patches checkout --detach FETCH_HEAD
+          test "$(git -C kernel_patches rev-parse HEAD)" = "$WILD_PATCHES_COMMIT"
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
           echo "使用当前仓库补丁目录: $ZZH_PATCHES"
           git clone https://github.com/Numbersf/Action-Build.git --depth=1
@@ -855,7 +905,14 @@ jobs:
       - name: 克隆 Droidspaces 补丁仓库
         if: inputs.droidspaces != 'off'
         run: |
-          git clone --depth 1 https://github.com/ravindu644/Droidspaces-OSS.git /tmp/Droidspaces-OSS
+          set -euo pipefail
+          DROIDSPACES_COMMIT="27a4cda6fea537075668041c2e6c6040b779024c"
+          rm -rf /tmp/Droidspaces-OSS
+          git init /tmp/Droidspaces-OSS
+          git -C /tmp/Droidspaces-OSS remote add origin https://github.com/ravindu644/Droidspaces-OSS.git
+          git -C /tmp/Droidspaces-OSS fetch --depth 1 origin "$DROIDSPACES_COMMIT"
+          git -C /tmp/Droidspaces-OSS checkout --detach FETCH_HEAD
+          test "$(git -C /tmp/Droidspaces-OSS rev-parse HEAD)" = "$DROIDSPACES_COMMIT"
           echo "DROIDSPACES_PATCHES=/tmp/Droidspaces-OSS/Documentation/resources/kernel-patches/GKI" >> $GITHUB_ENV
 
       # ==================== 备份原始 defconfig ====================
@@ -885,7 +942,10 @@ jobs:
               exit 0
               ;;
           esac
-          if ! patch -p1 --forward < "$PATCH_FILE"; then
+          if ${{ inputs.strict_feature_patches }}; then
+            git apply --check "$PATCH_FILE"
+            git apply "$PATCH_FILE"
+          elif ! patch -p1 --forward < "$PATCH_FILE"; then
             echo "::warning::SYSVIPC kABI 补丁应用失败，可能已应用或上下文不匹配"
           fi
 
@@ -893,7 +953,10 @@ jobs:
           if [ "$KERNEL_VER" = "5.10" ]; then
             echo "应用 Droidspaces POSIX_MQUEUE kABI 修复补丁 (5.10)..."
             POSIX_PATCH="$DROIDSPACES_PATCHES/below-kernel-6.12/002.5.10_or_lower_use_android_abi_padding_for_posix_mqueue.patch"
-            if ! patch -p1 --forward < "$POSIX_PATCH"; then
+            if ${{ inputs.strict_feature_patches }}; then
+              git apply --check "$POSIX_PATCH"
+              git apply "$POSIX_PATCH"
+            elif ! patch -p1 --forward < "$POSIX_PATCH"; then
               echo "::warning::POSIX_MQUEUE kABI 补丁应用失败，可能已应用或上下文不匹配"
             fi
           fi
@@ -990,7 +1053,7 @@ jobs:
         if: inputs.droidspaces != 'off' && inputs.droidspaces_ntsync
         working-directory: ${{ env.KERNEL_ROOT }}/common
         run: |
-          set -e
+          set -euo pipefail
           echo "=== 开始注入 NTSync 内核补丁 ==="
           echo "Android 版本: ${{ inputs.android_version }}"
           echo "Kernel 版本: ${{ inputs.kernel_version }}"
@@ -1018,11 +1081,30 @@ jobs:
           esac
 
           echo "自动选择 NTSync 补丁: ${NTSYNC_PATCH}.patch"
-          wget -q "https://raw.githubusercontent.com/Goldzxcbug/Droidspaces_Kernel_patch/refs/heads/main/NTsync/ntsync_base.patch"
-          wget -q "https://raw.githubusercontent.com/Goldzxcbug/Droidspaces_Kernel_patch/refs/heads/main/NTsync/${NTSYNC_PATCH}.patch"
+          NTSYNC_COMMIT="a322c829e50423572abb54ee44192a2727f7a756"
+          curl --fail --location --retry 5 --retry-all-errors \
+            "https://raw.githubusercontent.com/Goldzxcbug/Droidspaces_Kernel_patch/${NTSYNC_COMMIT}/NTsync/ntsync_base.patch" \
+            -o ntsync_base.patch
+          curl --fail --location --retry 5 --retry-all-errors \
+            "https://raw.githubusercontent.com/Goldzxcbug/Droidspaces_Kernel_patch/${NTSYNC_COMMIT}/NTsync/${NTSYNC_PATCH}.patch" \
+            -o "${NTSYNC_PATCH}.patch"
 
-          patch -p1 < "ntsync_base.patch"
-          patch -p1 < "${NTSYNC_PATCH}.patch"
+          if [[ "${{ inputs.android_version }}-${{ inputs.kernel_version }}" == android12-5.10 ]]; then
+            printf '%s  %s\n' \
+              3f43fff167ecbfdd4ef01321db41e042e33db01b2c645c7d8e01bb4abf1ccdd3 ntsync_base.patch \
+              bf53105f5cc576b39a94444b9263b20e975cb2b0aa3a33c19f320e0361b01d35 "${NTSYNC_PATCH}.patch" \
+              | sha256sum --check --strict
+          fi
+
+          if ${{ inputs.strict_feature_patches }}; then
+            git apply --check ntsync_base.patch
+            git apply --whitespace=nowarn ntsync_base.patch
+            git apply --check "${NTSYNC_PATCH}.patch"
+            git apply --whitespace=nowarn "${NTSYNC_PATCH}.patch"
+          else
+            patch -p1 < ntsync_base.patch
+            patch -p1 < "${NTSYNC_PATCH}.patch"
+          fi
 
           cd ..
 
@@ -1042,7 +1124,7 @@ jobs:
           echo "=== NTSync 补丁与配置注入完成 ==="
 
       - name: 应用 Unicode 绕过修复
-        if: inputs.enable_susfs
+        if: inputs.enable_unicode_fix
         working-directory: ${{ env.KERNEL_ROOT }}/common
         run: |
           if [ "${{ inputs.kernel_version }}" = "5.10" ] || [ "${{ inputs.kernel_version }}" = "5.15" ]; then
@@ -1188,9 +1270,28 @@ jobs:
         if: inputs.use_bbg
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
-          echo "CONFIG_BBG=y" >> common/arch/arm64/configs/gki_defconfig
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' common/security/Kconfig
+          set -euo pipefail
+          BBG_COMMIT="a54e0dc6cf0aff4dd87fec49644a02d2eb612905"
+          rm -rf Baseband-guard
+          git init Baseband-guard
+          git -C Baseband-guard remote add origin https://github.com/vc-teahouse/Baseband-guard.git
+          git -C Baseband-guard fetch --depth 1 origin "$BBG_COMMIT"
+          git -C Baseband-guard checkout --detach FETCH_HEAD
+          test "$(git -C Baseband-guard rev-parse HEAD)" = "$BBG_COMMIT"
+          printf '%s  %s\n' \
+            73d0474bb46b7e413da8f247af09b139e0d49dd8006d2b64fa9ef04676d630b7 \
+            Baseband-guard/setup.sh | sha256sum --check --strict
+          sh Baseband-guard/setup.sh "$BBG_COMMIT"
+          test -L common/security/baseband-guard
+          grep -qF 'obj-$(CONFIG_BBG) += baseband-guard/' common/security/Makefile
+          grep -qF 'source "security/baseband-guard/Kconfig"' common/security/Kconfig
+          if ! ${{ inputs.strict_feature_patches }}; then
+            "$GITHUB_WORKSPACE/scripts/configure_kernel_features.sh" \
+              "$KERNEL_ROOT/common" \
+              "$DEFCONFIG" \
+              "$RUNNER_TEMP/bbg-feature-expectations.txt" \
+              --bbg
+          fi
 
       # ==================== 应用 Re-Kernel ====================
       # Re-Kernel 通过 GKI Vendor Hooks 提供内核级保护功能
@@ -1254,6 +1355,62 @@ jobs:
           grep -q '^CONFIG_REKERNEL=y$' "$DEFCONFIG" || echo "CONFIG_REKERNEL=y" >> "$DEFCONFIG"
           grep -q '^CONFIG_REKERNEL_NETWORK=y$' "$DEFCONFIG" || echo "CONFIG_REKERNEL_NETWORK=y" >> "$DEFCONFIG"
 
+      # ==================== WildKernels 可选源码补丁 ====================
+      - name: 应用 WildKernels BBRv3 / Ptrace / BTF 补丁
+        if: inputs.use_bbr3 || inputs.use_ptrace_fix || inputs.use_btf
+        working-directory: ${{ env.KERNEL_ROOT }}/common
+        run: |
+          set -euo pipefail
+          PATCH_ARGS=()
+
+          if ${{ inputs.use_bbr3 }}; then
+            if [[ "${{ inputs.android_version }}-${{ inputs.kernel_version }}" != "android12-5.10" ]]; then
+              echo "::error::当前 BBRv3 补丁仅适配 android12-5.10"
+              exit 1
+            fi
+            PATCH_ARGS+=(--bbr3)
+          fi
+          if ${{ inputs.use_ptrace_fix }}; then
+            PATCH_ARGS+=(--ptrace)
+          fi
+          if ${{ inputs.use_btf }}; then
+            PATCH_ARGS+=(--btf)
+          fi
+
+          "$GITHUB_WORKSPACE/scripts/apply_wild_features.sh" \
+            "$KERNEL_ROOT/common" \
+            "$KERNEL_PATCHES" \
+            "$GITHUB_WORKSPACE" \
+            "${PATCH_ARGS[@]}"
+
+      - name: 配置 BTF 主机工具
+        if: inputs.use_btf
+        run: |
+          set -euo pipefail
+          SYSTEM_PAHOLE=$(command -v pahole)
+          PAHOLE_VERSION=$($SYSTEM_PAHOLE --version | sed -E 's/[^0-9]*([0-9]+)\.([0-9]+).*/\1\2/')
+          if [[ -z "$PAHOLE_VERSION" || "$PAHOLE_VERSION" -lt 124 ]]; then
+            echo "::error::BTF 需要 pahole >= 1.24，当前为 $($SYSTEM_PAHOLE --version)"
+            exit 1
+          fi
+
+          BUILD_CONFIG="$KERNEL_ROOT/common/build.config.gki.aarch64"
+          if ! grep -q '^ADDITIONAL_HOST_TOOLS=' "$BUILD_CONFIG"; then
+            echo 'ADDITIONAL_HOST_TOOLS="${ADDITIONAL_HOST_TOOLS} dd"' >> "$BUILD_CONFIG"
+          elif ! grep -q 'ADDITIONAL_HOST_TOOLS=.*\bdd\b' "$BUILD_CONFIG"; then
+            sed -i 's|^ADDITIONAL_HOST_TOOLS="\(.*\)"|ADDITIONAL_HOST_TOOLS="\1 dd"|' "$BUILD_CONFIG"
+          fi
+
+          HERMETIC_PAHOLE="$KERNEL_ROOT/build/build-tools/path/linux-x86/pahole"
+          test -e "$HERMETIC_PAHOLE" || test -L "$HERMETIC_PAHOLE"
+          rm -f "$HERMETIC_PAHOLE"
+          cat > "$HERMETIC_PAHOLE" <<EOF
+          #!/bin/sh
+          exec "$SYSTEM_PAHOLE" --skip_encoding_btf_enum64 --skip_encoding_btf_decl_tag --skip_encoding_btf_type_tag "\$@"
+          EOF
+          chmod +x "$HERMETIC_PAHOLE"
+          "$HERMETIC_PAHOLE" --version
+
       # ==================== 配置内核选项 ====================
       # 添加 KernelSU 和其他必要的内核配置
       - name: 配置内核选项
@@ -1314,6 +1471,34 @@ jobs:
           CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
           CONFIG_KSU_SUSFS_SUS_MAP=y
           EOF
+
+      # ==================== 统一配置并记录功能期望 ====================
+      - name: 配置 WildKernels 与原 workflow 可选功能
+        if: inputs.strict_feature_patches
+        run: |
+          set -euo pipefail
+          FEATURE_ARGS=()
+
+          if ${{ inputs.use_networking }} || ${{ inputs.use_bbr3 }}; then
+            FEATURE_ARGS+=(--networking)
+          fi
+          if ${{ inputs.use_bbr3 }}; then FEATURE_ARGS+=(--bbr3); fi
+          if ${{ inputs.use_cifs }}; then FEATURE_ARGS+=(--cifs); fi
+          if ${{ inputs.use_misc }}; then FEATURE_ARGS+=(--misc); fi
+          if ${{ inputs.use_fuse_bpf }}; then FEATURE_ARGS+=(--fuse-bpf); fi
+          if ${{ inputs.use_btf }}; then FEATURE_ARGS+=(--btf); fi
+          if ${{ inputs.use_bbg }}; then FEATURE_ARGS+=(--bbg); fi
+          if ${{ inputs.use_zram }}; then FEATURE_ARGS+=(--zram); fi
+          if ${{ inputs.use_rekernel }}; then FEATURE_ARGS+=(--rekernel); fi
+          if ${{ inputs.enable_susfs }}; then FEATURE_ARGS+=(--susfs); fi
+          if [[ "${{ inputs.droidspaces }}" != off ]]; then FEATURE_ARGS+=(--droidspaces); fi
+          if ${{ inputs.droidspaces_ntsync }}; then FEATURE_ARGS+=(--ntsync); fi
+
+          "$GITHUB_WORKSPACE/scripts/configure_kernel_features.sh" \
+            "$KERNEL_ROOT/common" \
+            "$DEFCONFIG" \
+            "$FEATURE_EXPECTATIONS" \
+            "${FEATURE_ARGS[@]}"
 
       # ==================== 配置内核名称 ====================
       - name: 配置内核名称
@@ -1471,6 +1656,30 @@ jobs:
             echo "当前 SUSFS 最新提交日期: ${SUSFS_LATEST_COMMIT_DATE}"
             echo "如果日期不同或相差过远则补丁失效、编译失败"
 
+      # ==================== 验证最终内核配置 ====================
+      # ztc 严格模式下检查 Kconfig 解析后的 .config，避免仅向 defconfig 追加无效符号。
+      - name: 验证最终内核功能配置
+        if: inputs.strict_feature_patches
+        run: |
+          set -euo pipefail
+          FINAL_CONFIG=$(find "$KERNEL_ROOT/out" -type f -path '*/common/.config' -print -quit)
+          if [[ -z "$FINAL_CONFIG" ]]; then
+            echo "::error::未找到传统构建生成的 common/.config"
+            exit 1
+          fi
+
+          "$GITHUB_WORKSPACE/scripts/verify_kernel_config.sh" \
+            "$FINAL_CONFIG" \
+            "$FEATURE_EXPECTATIONS"
+
+          CONFIG_REPORT="kernel-config-${CONFIG}${{ inputs.artifact_suffix }}.txt"
+          cp "$FINAL_CONFIG" "$GITHUB_WORKSPACE/$CONFIG_REPORT"
+          {
+            echo "## 最终内核功能校验"
+            echo
+            echo "已通过最终 \`.config\` 校验；配置文件随构建产物上传为 \`$CONFIG_REPORT\`。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # ==================== 准备内核 Image ====================
       # 复制编译产物到工作目录，供 AnyKernel3 打包使用
       - name: 准备内核 Image
@@ -1587,6 +1796,7 @@ jobs:
           name: ReSukiSU_kernel-${{ env.CONFIG }}${{ inputs.artifact_suffix }}
           path: |
             *AnyKernel3.zip
+            kernel-config-*.txt
 #            *.img
           compression-level: 0
 
