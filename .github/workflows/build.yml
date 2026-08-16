@@ -32,6 +32,33 @@ on:
         required: true
         type: string
 
+      # ==================== 可选内核源码基线 ====================
+      # 留空时保持 Android manifest 中的 AOSP common 源码不变。
+      kernel_source_repo:
+        required: false
+        type: string
+        default: ""
+      kernel_source_ref:
+        required: false
+        type: string
+        default: "HEAD"
+      artifact_suffix:
+        required: false
+        type: string
+        default: ""
+      clang_prebuilt_version:
+        required: false
+        type: string
+        default: ""
+      clang_archive_url:
+        required: false
+        type: string
+        default: ""
+      clang_archive_sha256:
+        required: false
+        type: string
+        default: ""
+
       # ==================== KernelSU 配置 ====================
       ksu_variant:
         required: true
@@ -56,15 +83,17 @@ on:
       use_zram:
         required: true
         type: boolean
-        default: true
       use_bbg:
         required: true
         type: boolean
-        default: true
       use_rekernel:
         required: false
         type: boolean
         default: false
+      use_kpm:
+        required: false
+        type: string
+        default: "disabled"
       cve_2026_43499_patch:
         required: false
         type: boolean
@@ -72,7 +101,6 @@ on:
       enable_susfs:
         required: true
         type: boolean
-        default: true
       supp_op:
         required: false
         type: boolean
@@ -111,6 +139,9 @@ jobs:
           echo "内核版本      : ${{ inputs.kernel_version }}"
           echo "子版本号      : ${{ inputs.sub_level }}"
           echo "补丁级别      : ${{ inputs.os_patch_level }}"
+          echo "源码仓库      : ${{ inputs.kernel_source_repo || 'AOSP manifest default' }}"
+          echo "源码引用      : ${{ inputs.kernel_source_repo && inputs.kernel_source_ref || 'manifest revision' }}"
+          echo "Clang 工具链  : ${{ inputs.clang_prebuilt_version || 'manifest default' }}"
           echo "KSU 变体      : ReSukiSU"
           echo "KSU 分支      : ${{ inputs.ksu_branch }}"
           echo "构建时间      : ${{ inputs.build_time }}"
@@ -311,6 +342,70 @@ jobs:
           $REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast
           echo "REMOTE_BRANCH=$REMOTE_BRANCH" >> $GITHUB_ENV
 
+      # ==================== 可选源码基线覆盖 ====================
+      # 在保留 AOSP manifest 工具链和构建脚本的同时，仅替换 common 内核源码。
+      - name: 切换自定义内核基线
+        if: inputs.kernel_source_repo != ''
+        working-directory: ${{ env.KERNEL_ROOT }}/common
+        env:
+          KERNEL_SOURCE_REPO: ${{ inputs.kernel_source_repo }}
+          KERNEL_SOURCE_REF: ${{ inputs.kernel_source_ref }}
+        run: |
+          bash "$GITHUB_WORKSPACE/scripts/checkout_kernel_source.sh" \
+            "$KERNEL_SOURCE_REPO" \
+            "$KERNEL_SOURCE_REF" \
+            "${{ inputs.kernel_version }}.${{ inputs.sub_level }}"
+
+      # ztc 基线启用了 MLGO regalloc，需要比 Android 12 manifest 默认值更新的 clang。
+      - name: 恢复自定义 Clang 缓存
+        if: inputs.clang_prebuilt_version != ''
+        id: cache-custom-clang
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/${{ inputs.android_version }}-${{ inputs.kernel_version }}-${{ inputs.sub_level }}/prebuilts-master/clang/host/linux-x86/${{ inputs.clang_prebuilt_version }}
+          key: custom-clang-${{ runner.os }}-${{ inputs.clang_prebuilt_version }}-${{ inputs.clang_archive_sha256 }}
+
+      - name: 安装自定义 Clang
+        if: inputs.clang_prebuilt_version != ''
+        env:
+          CLANG_PREBUILT_VERSION: ${{ inputs.clang_prebuilt_version }}
+          CLANG_ARCHIVE_URL: ${{ inputs.clang_archive_url }}
+          CLANG_ARCHIVE_SHA256: ${{ inputs.clang_archive_sha256 }}
+          CLANG_CACHE_HIT: ${{ steps.cache-custom-clang.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$CLANG_ARCHIVE_URL" ] || [ -z "$CLANG_ARCHIVE_SHA256" ]; then
+            echo "::error::自定义 Clang 缺少下载地址或 SHA256"
+            exit 1
+          fi
+
+          CLANG_DEST="$KERNEL_ROOT/prebuilts-master/clang/host/linux-x86/$CLANG_PREBUILT_VERSION"
+          if [ "$CLANG_CACHE_HIT" != "true" ]; then
+            CLANG_ARCHIVE="$RUNNER_TEMP/$CLANG_PREBUILT_VERSION.tar.gz"
+            mkdir -p "$CLANG_DEST"
+            curl --fail --location --retry 5 --retry-all-errors \
+              "$CLANG_ARCHIVE_URL" -o "$CLANG_ARCHIVE"
+            printf '%s  %s\n' "$CLANG_ARCHIVE_SHA256" "$CLANG_ARCHIVE" | sha256sum --check --strict
+            tar -xzf "$CLANG_ARCHIVE" -C "$CLANG_DEST"
+          fi
+
+          test -x "$CLANG_DEST/bin/clang"
+          "$CLANG_DEST/bin/clang" --version
+
+          CLANG_CONFIG="$KERNEL_ROOT/common/build.config.common"
+          test -f "$CLANG_CONFIG"
+          sed -i "s|^CLANG_PREBUILT_BIN=.*|CLANG_PREBUILT_BIN=prebuilts-master/clang/host/linux-x86/$CLANG_PREBUILT_VERSION/bin|" "$CLANG_CONFIG"
+          grep '^CLANG_PREBUILT_BIN=' "$CLANG_CONFIG"
+
+          # ztc default 以版本号判断该警告选项，但 r563880 (clang 21.0) 尚未提供它。
+          # 使用 Kbuild 自带的能力探测宏；支持该选项的 21.1+ 工具链仍会启用抑制。
+          KVM_MAKEFILE="$KERNEL_ROOT/common/arch/arm64/kvm/Makefile"
+          if grep -qF 'ccflags-y += -Wno-uninitialized-const-pointer' "$KVM_MAKEFILE"; then
+            sed -i 's|ccflags-y += -Wno-uninitialized-const-pointer|ccflags-y += $(call cc-disable-warning,uninitialized-const-pointer)|' "$KVM_MAKEFILE"
+            echo "已将 uninitialized-const-pointer 抑制改为编译器能力探测"
+          fi
+
       # ==================== 伪装 /proc/config.gz（自动检测） ====================
       # 若仓库存在 config/stock_defconfig，则自动应用；不存在则跳过
       - name: 应用 Stock Config 伪装
@@ -427,11 +522,11 @@ jobs:
 
           # 如果用户输入了自定义分支名或 commit hash，直接使用
           if [ -n "$branch_input" ]; then
-            BRANCH="-s $branch_input"
+            BRANCH="$branch_input"
             echo "使用自定义分支/提交: $branch_input"
           else
             # ReSukiSU 默认使用 main 分支
-            BRANCH="-s main"
+            BRANCH="main"
           fi
 
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
@@ -443,7 +538,7 @@ jobs:
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           echo "添加 ReSukiSU..."
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash $BRANCH
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s -- "$BRANCH"
 
           if [ -d "KernelSU/.git" ]; then
             KSU_LATEST_COMMIT_DATE=$(git -C KernelSU log -1 --date=format:'%Y-%m-%d %H:%M:%S %z' --format='%cd')
@@ -1392,7 +1487,7 @@ jobs:
       - name: 创建 AnyKernel3 压缩包
         run: |
           cd $ANYKERNEL3
-          ZIP_NAME="${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}-AnyKernel3.zip"
+          ZIP_NAME="${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}${{ inputs.artifact_suffix }}-AnyKernel3.zip"
           mv ../Image ./Image
           zip -r "../$ZIP_NAME" ./*
 
@@ -1489,7 +1584,7 @@ jobs:
       - name: 上传构建产物
         uses: actions/upload-artifact@v6
         with:
-          name: ReSukiSU_kernel-${{ env.CONFIG }}
+          name: ReSukiSU_kernel-${{ env.CONFIG }}${{ inputs.artifact_suffix }}
           path: |
             *AnyKernel3.zip
 #            *.img
@@ -1500,7 +1595,7 @@ jobs:
         if: always() && env.REJ_COUNT > 0
         uses: actions/upload-artifact@v6
         with:
-          name: ReSukiSU_kernel-${{ env.CONFIG }}-Rejects
+          name: ReSukiSU_kernel-${{ env.CONFIG }}${{ inputs.artifact_suffix }}-Rejects
           path: patch-rejects/
           if-no-files-found: ignore
           compression-level: 9
