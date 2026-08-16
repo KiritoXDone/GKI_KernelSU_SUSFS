@@ -217,8 +217,11 @@ jobs:
           testing: false
 
       # ==================== 检出仓库代码 ====================
-      - name: 检出代码仓库
+      - name: 检出构建仓库
         uses: actions/checkout@v6
+        with:
+          repository: KiritoXDone/GKI_KernelSU_SUSFS
+          ref: main
 
       # ==================== 初始化构建环境 ====================
       # 设置各种路径变量，包括内核源码、补丁、工具等目录
