@@ -42,17 +42,20 @@
 
 ## ⚠️ 重要更新日志
 
-> **ztc 专用构建：** 新增独立的 `内核构建 - ztc 5.10 + ReSukiSU + SUSFS`
-> workflow。它只构建
+> **ztc/Wild 专用构建：** 独立的 `内核构建 - ztc/Wild 5.10 + ReSukiSU + SUSFS`
+> workflow 从 AOSP `android12-5.10-2026-07_r1`（`5.10.257`）开始，按固定顺序叠加
+> 两组可审计补丁：第一组复现并移植
 > [ztc1997/android_gki_kernel_5.10_common](https://github.com/ztc1997/android_gki_kernel_5.10_common)
-> 的 default 分支（当前为 `android12-5.10-2025-09` / `5.10.240`），并在该基线上叠加
-> ReSukiSU 与 SUSFS。原有 Android 12 及其他版本构建仍使用原来的 AOSP 基线。
+> 提交 `ad7de5b` 的优化，并包含
+> [Star-ZER0 的迁移修复](https://github.com/Star-ZER0/android_gki_kernel_5.10_common)
+> （LZ4HC、defconfig、F2FS sysfs），并前移到 5.10.257；第二组提供 WildKernels 的 BBRv3、Ptrace 与 BTF 补丁，
+> 并保留网络、CIFS、Misc 等配置开关。原有其他构建仍使用原来的 AOSP 基线。
 >
 > 构建使用 ztc 衍生流程采用的 `clang-r563880`，下载后校验固定 SHA256，以支持该基线的
 > MLGO regalloc 参数。
 >
-> 该 workflow 固定关闭 ZRAM、BBG、Re-Kernel 与 Droidspaces 等额外功能，避免覆盖 ztc
-> 自带优化；运行时会校验 default 分支的内核版本，并拒绝已预集成 KernelSU/SUSFS 的源码分支。
+> 两组补丁均固定上游提交并校验 SHA-256；ztc 组还会校验 AOSP 基线树和应用后的完整
+> Git tree。WildKernels 组始终在 ztc 组之后应用，BBRv3 冲突通过仓库内审计过的兼容 hunk 处理。
 
 > **注意：** 目前不支持一加 ColorOS 14、15，刷入后可能需要清除数据开机。
 

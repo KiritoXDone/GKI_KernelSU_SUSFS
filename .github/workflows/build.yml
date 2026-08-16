@@ -32,7 +32,7 @@ on:
         required: true
         type: string
 
-      # ==================== 可选内核源码基线 ====================
+      # ==================== 可选内核源码基线 / 补丁组 ====================
       # 留空时保持 Android manifest 中的 AOSP common 源码不变。
       kernel_source_repo:
         required: false
@@ -46,6 +46,10 @@ on:
         required: false
         type: string
         default: ""
+      use_ztc_optimizations:
+        required: false
+        type: boolean
+        default: false
       clang_prebuilt_version:
         required: false
         type: string
@@ -177,6 +181,8 @@ jobs:
           echo "补丁级别      : ${{ inputs.os_patch_level }}"
           echo "源码仓库      : ${{ inputs.kernel_source_repo || 'AOSP manifest default' }}"
           echo "源码引用      : ${{ inputs.kernel_source_repo && inputs.kernel_source_ref || 'manifest revision' }}"
+          echo "ztc 补丁组    : ${{ inputs.use_ztc_optimizations }}"
+          echo "Wild 补丁组   : ${{ inputs.use_bbr3 || inputs.use_ptrace_fix || inputs.use_btf }}"
           echo "Clang 工具链  : ${{ inputs.clang_prebuilt_version || 'manifest default' }}"
           echo "KSU 变体      : ReSukiSU"
           echo "KSU 分支      : ${{ inputs.ksu_branch }}"
@@ -406,7 +412,18 @@ jobs:
             "$KERNEL_SOURCE_REF" \
             "${{ inputs.kernel_version }}.${{ inputs.sub_level }}"
 
-      # ztc 基线启用了 MLGO regalloc，需要比 Android 12 manifest 默认值更新的 clang。
+      # ==================== 第一组：ztc 优化补丁 ====================
+      # 专用构建保持 AOSP manifest 的固定 r1 源码，不再替换为 ztc fork。
+      - name: 应用 ztc 优化补丁组
+        if: inputs.use_ztc_optimizations
+        working-directory: ${{ env.KERNEL_ROOT }}/common
+        run: |
+          set -euo pipefail
+          "$GITHUB_WORKSPACE/scripts/apply_ztc_patchset.sh" \
+            "$KERNEL_ROOT/common" \
+            "$GITHUB_WORKSPACE"
+
+      # ztc 补丁组启用了 MLGO regalloc，需要比 Android 12 manifest 默认值更新的 clang。
       - name: 恢复自定义 Clang 缓存
         if: inputs.clang_prebuilt_version != ''
         id: cache-custom-clang
@@ -1368,7 +1385,7 @@ jobs:
           grep -q '^CONFIG_REKERNEL=y$' "$DEFCONFIG" || echo "CONFIG_REKERNEL=y" >> "$DEFCONFIG"
           grep -q '^CONFIG_REKERNEL_NETWORK=y$' "$DEFCONFIG" || echo "CONFIG_REKERNEL_NETWORK=y" >> "$DEFCONFIG"
 
-      # ==================== WildKernels 可选源码补丁 ====================
+      # ==================== 第二组：WildKernels 可选源码补丁 ====================
       - name: 应用 WildKernels BBRv3 / Ptrace / BTF 补丁
         if: inputs.use_bbr3 || inputs.use_ptrace_fix || inputs.use_btf
         working-directory: ${{ env.KERNEL_ROOT }}/common

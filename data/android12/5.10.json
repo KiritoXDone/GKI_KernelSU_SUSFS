@@ -183,6 +183,11 @@
       "revision": "r1"
     },
     {
+      "date": "2026-07",
+      "kernel": "5.10.257",
+      "revision": "r1"
+    },
+    {
       "date": "lts",
       "kernel": "5.10.264",
       "revision": "r1"

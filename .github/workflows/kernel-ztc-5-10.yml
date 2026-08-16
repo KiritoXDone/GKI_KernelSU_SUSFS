@@ -1,8 +1,7 @@
-name: 内核构建 - ztc 5.10 + ReSukiSU + SUSFS
+name: 内核构建 - ztc/Wild 5.10 + ReSukiSU + SUSFS
 
-# ztc1997/android_gki_kernel_5.10_common 已归档；其 default 分支当前为
-# android12-5.10-2025-09 (5.10.240)。构建流程仍在运行时解析 HEAD，并由
-# checkout_kernel_source.sh 校验版本，避免 default 分支变化后产物被错标。
+# 从 AOSP android12-5.10-2026-07_r1 开始，先应用固定的 ztc 优化补丁组，
+# 再按输入应用 WildKernels 补丁组。构建不再检出已归档的 ztc 源码仓库。
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -112,18 +111,17 @@ on:
 
 jobs:
   build-ztc-resukisu-susfs:
-    name: "ztc default (5.10.240) + ReSukiSU + SUSFS"
+    name: "AOSP 5.10.257 + ztc/Wild patches + ReSukiSU + SUSFS"
     uses: ./.github/workflows/build.yml
     secrets: inherit
     with:
       android_version: "android12"
       kernel_version: "5.10"
-      sub_level: "240"
-      os_patch_level: "2025-09"
+      sub_level: "257"
+      os_patch_level: "2026-07"
       revision: "r1"
-      kernel_source_repo: "https://github.com/ztc1997/android_gki_kernel_5.10_common.git"
-      kernel_source_ref: "HEAD"
       artifact_suffix: "-ztc"
+      use_ztc_optimizations: true
       # ztc 官方衍生 workflow 使用 r563880，以支持其 MLGO regalloc 参数。
       clang_prebuilt_version: "clang-r563880"
       clang_archive_url: "https://github.com/zzh20188/ZTC-Kernel-Build/releases/download/clang/clang-r563880.tar.gz"

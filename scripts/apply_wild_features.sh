@@ -62,7 +62,7 @@ fi
 if [[ "$apply_bbr3" == true ]]; then
   bbr3_dir="$wild_patches/common/bbrv3"
   bbr3_patch="$bbr3_dir/0001-net-tcp-backport-BBRv3-to-android12-5.10.patch"
-  compat_patch="$repo_root/patches/wild/compat/ztc-5.10-bbr3-tlp-ack.patch"
+  compat_patch="$repo_root/patches/wild/compat/android12-5.10-bbr3-tlp-ack.patch"
 
   verify_sha256 f2989221fef193b43d665ec8fe96a4093ec3482e46f1154d62c2c3c5204846bb "$bbr3_patch"
   verify_sha256 0d08af00930a77f050e1309528380d281d1033efc81856b83e9aa1c5da0d892b "$compat_patch"
@@ -101,13 +101,13 @@ if [[ "$apply_bbr3" == true ]]; then
     if [[ $(grep -c '^@@ ' net/ipv4/tcp_input.c.rej) -ne 1 ]] \
       || ! grep -qF -- $'-\t\ttcp_process_tlp_ack(sk, ack, flag);' net/ipv4/tcp_input.c.rej \
       || ! grep -qF -- $'+\t\ttcp_process_tlp_ack(sk, ack, flag, &rs);' net/ipv4/tcp_input.c.rej; then
-      echo "ztc BBRv3 reject no longer matches the audited TLP-ACK context" >&2
+      echo "Android 12 5.10 BBRv3 reject no longer matches the audited TLP-ACK context" >&2
       exit 1
     fi
     git apply --check "$compat_patch"
     git apply "$compat_patch"
     rm net/ipv4/tcp_input.c.rej
-    echo "Applied audited ztc TLP-ACK compatibility hunk"
+    echo "Applied audited Android 12 5.10 TLP-ACK compatibility hunk"
   fi
 
   if ! grep -qF 'int proc_dou8vec_minmax(' include/linux/sysctl.h; then
